@@ -3928,11 +3928,13 @@ section.scene{
   {
     const PLAY  = `<svg viewBox="0 0 10 12"><path d="M0 0l10 6-10 6z"/></svg>`;
     const PAUSE = `<svg viewBox="0 0 10 12"><rect x="0" y="0" width="3.5" height="12"/><rect x="6.5" y="0" width="3.5" height="12"/></svg>`;
-    let activeAudio = null, activeChip = null;
+    let activeAudio = null, activeChip = null, pendingAudio = null;
 
     function stopActive() {
-      if (activeAudio) { activeAudio.pause(); activeAudio.currentTime = 0; }
-      if (activeChip)  {
+      // 取消正在加载但还没播放的音频
+      if (pendingAudio) { pendingAudio.src = ''; pendingAudio = null; }
+      if (activeAudio)  { activeAudio.pause(); activeAudio.currentTime = 0; }
+      if (activeChip)   {
         activeChip.classList.remove('playing', 'loading');
         const b = activeChip.querySelector('.aq-btn');
         if (b) b.innerHTML = PLAY;
@@ -3943,27 +3945,32 @@ section.scene{
 
     playChip = function(chip) {
       if (activeChip === chip) return;
-      stopActive();
+      stopActive();                        // 立即停上一个（含取消 pending）
 
       const src = chip.dataset.src;
       if (!src) return;
 
       chip.classList.add('loading');
+      activeChip = chip;                   // 立即占位，防止同帧第二次触发
+
       const audio = new Audio(src);
+      pendingAudio = audio;                // 记录正在加载的音频
 
       audio.addEventListener('canplay', () => {
+        if (pendingAudio !== audio) return; // 已被更新的 stopActive 取消
+        pendingAudio = null;
         chip.classList.remove('loading');
         chip.classList.add('playing');
         const b = chip.querySelector('.aq-btn');
         if (b) b.innerHTML = PAUSE;
         audio.play().catch(() => stopActive());
         activeAudio = audio;
-        activeChip  = chip;
         duckBGM();
       }, { once: true });
 
       audio.addEventListener('ended', stopActive);
       audio.addEventListener('error', () => {
+        if (pendingAudio === audio) pendingAudio = null;
         chip.classList.remove('loading');
         console.warn('Audio load failed:', src);
       });
